@@ -9,7 +9,7 @@ include(${QT_USE_FILE})
 
 set(CMAKE_CXX_FLAGS "${OpenMP_CXX_FLAGS} -std=c++11")
 
-include_directories(${Boost_INCLUDE_DIR} ${QT_INCLUDE_DIR})
+include_directories(${Boost_INCLUDE_DIR} ${QT_INCLUDE_DIR} ${CMAKE_CURRENT_BINARY_DIR})
 
 QT4_WRAP_UI(UI_SRCS mainwindow.ui)
 
