@@ -1,28 +1,34 @@
+#define NOGUI
+
+#ifndef NOGUI
 #include "mainwindow.h"
 #include <QApplication>
+#endif
 #include <iostream>
 #include <boost/random.hpp>
 #include <algorithm>
 #include <omp.h>
+#include "quadtree.h"
+#include "particle.h"
 
-QuadTree *random(size_t count) {
+QuadTree<Particle, ParticleToVector> *random(size_t count) {
     boost::random::mt19937 rng;
     boost::random::uniform_real_distribution<> gen(0, 1.0);
     srandom(time(NULL));
 
-    std::vector<Vector> points(count);
+    std::vector<Particle> points(count);
 
     std::generate_n(points.begin(), count, [&]{
-        return Vector(gen(rng), gen(rng));
+        return Particle(gen(rng), gen(rng));
     });
 
     float before = omp_get_wtime();
-    QuadTree *tree = new QuadTree(points, Vector(0.5, 0.5), 1.0, 3);
+    QuadTree<Particle, ParticleToVector> *tree = new QuadTree<Particle, ParticleToVector>(points, Vector(0.5, 0.5), 1.0, ParticleToVector(), 3);
     float after = omp_get_wtime();
     std::cout << "tree generation of " << count << " points took " << (after - before) << std::endl;
     return tree;
 }
-//#define NOGUI
+
 #ifdef NOGUI
 const int size = 10000000;
 #else
@@ -51,7 +57,7 @@ void test_aabb() {
 
 int main(int argc, char **argv) {
     test_aabb();
-    QuadTree *tree = random(size);
+    QuadTree<Particle, ParticleToVector> *tree = random(size);
 #ifdef NOGUI
     std::cout << "tree done" << std::endl;
 

@@ -56,6 +56,12 @@ struct Vector {
     }
 };
 
+struct VectorToVector {
+    Vector operator()(const Vector &v) const {
+        return Vector(v);
+    }
+};
+
 struct AABB {
     AABB(Vector c, float half_dim)
         : center(c), half_dim(half_dim) {
@@ -130,23 +136,24 @@ struct AABB {
     float half_dim;
 };
 
+template<class T, class Function>
 struct Node {
-    Node(std::vector<Vector> points, Vector c, float dim, int threshold)
+    Node(std::vector<T> elems, Vector c, float dim, Function f, int threshold = 3)
         : northWest(0), northEast(0), southWest(0), southEast(0),
-          box(c, dim/2.0f) {
-        if (points.size() <= (std::size_t) threshold) {
-            this->points = points;
+          box(c, dim/2.0f), f(f) {
+        if (elems.size() <= (std::size_t) threshold) {
+            this->elems = elems;
             return;
         }
-        std::vector<Vector> nw, ne, se, sw;
+        std::vector<T> nw, ne, se, sw;
         float quad_dim = box.half_dim / 2.0f;
 
 
-        for (Vector &v: points) {
-            if (c.isNW(v)) nw.push_back(v);
-            if (c.isNE(v)) ne.push_back(v);
-            if (c.isSE(v)) se.push_back(v);
-            if (c.isSW(v)) sw.push_back(v);
+        for (const T &v: elems) {
+            if (c.isNE(f(v))) ne.push_back(v);
+            if (c.isNW(f(v))) nw.push_back(v);
+            if (c.isSE(f(v))) se.push_back(v);
+            if (c.isSW(f(v))) sw.push_back(v);
         }
 
 #pragma omp parallel sections
@@ -155,35 +162,35 @@ struct Node {
 #pragma omp section
 {
         if (!nw.empty())
-            northWest = new Node(nw, Vector(c.x-quad_dim, c.y-quad_dim), box.half_dim, threshold);
+            northWest = new Node<T, Function>(nw, Vector(c.x-quad_dim, c.y-quad_dim), box.half_dim, f, threshold);
 }
 #pragma omp section
 {
         if (!ne.empty())
-            northEast = new Node(ne, Vector(c.x+quad_dim, c.y-quad_dim), box.half_dim, threshold);
+            northEast = new Node<T, Function>(ne, Vector(c.x+quad_dim, c.y-quad_dim), box.half_dim, f, threshold);
 }
 #pragma omp section
 {
         if (!sw.empty())
-            southWest = new Node(sw, Vector(c.x-quad_dim, c.y+quad_dim), box.half_dim, threshold);
+            southWest = new Node<T, Function>(sw, Vector(c.x-quad_dim, c.y+quad_dim), box.half_dim, f, threshold);
 }
 #pragma omp section
 {
         if (!se.empty())
-            southEast = new Node(se, Vector(c.x+quad_dim, c.y+quad_dim), box.half_dim, threshold);
+            southEast = new Node<T, Function>(se, Vector(c.x+quad_dim, c.y+quad_dim), box.half_dim, f, threshold);
 }
 
 }
-        assert(points.size() == (nw.size() + ne.size() + sw.size() + se.size()));
+        assert(elems.size() == (nw.size() + ne.size() + sw.size() + se.size()));
     }
 
     std::size_t count() const {
         if (!northEast && !northWest && !southEast && !southWest) {
-            for (Vector v: points) {
+            for (Vector v: elems) {
                 assert(v <= box.center+box.half_dim);
                 assert(v >= box.center-box.half_dim);
             }
-            return points.size();
+            return elems.size();
         }
         std::size_t count = 0;
         if (northEast)
@@ -197,30 +204,30 @@ struct Node {
         return count;
     }
 
-    std::vector<Vector> query(const AABB &box) const {
-        std::vector<Vector> points;
+    std::vector<T> query(const AABB &box) const {
+        std::vector<T> points;
         if (!northEast && !northWest && !southEast && !southWest) {
-            for (Vector v: this->points) {
-                if (box.in(v)) {
+            for (T v: this->elems) {
+                if (box.in(f(v))) {
                     points.push_back(v);
                 }
             }
             return points;
         }
         if (northEast && northEast->box.overlaps(box)) {
-            std::vector<Vector> tmp = northEast->query(box);
+            std::vector<T> tmp = northEast->query(box);
             points.insert(points.end(), tmp.begin(), tmp.end());
         }
         if (northWest && northWest->box.overlaps(box)) {
-            std::vector<Vector> tmp = northWest->query(box);
+            std::vector<T> tmp = northWest->query(box);
             points.insert(points.end(), tmp.begin(), tmp.end());
         }
         if (southEast && southEast->box.overlaps(box)) {
-            std::vector<Vector> tmp = southEast->query(box);
+            std::vector<T> tmp = southEast->query(box);
             points.insert(points.end(), tmp.begin(), tmp.end());
         }
         if (southWest && southWest->box.overlaps(box)) {
-            std::vector<Vector> tmp = southWest->query(box);
+            std::vector<T> tmp = southWest->query(box);
             points.insert(points.end(), tmp.begin(), tmp.end());
         }
         return points;
@@ -249,9 +256,9 @@ struct Node {
         return 0;
     }
 
-    void get(std::vector<Vector> &store) const {
+    void get(std::vector<T> &store) const {
         if (!northEast && !northWest && !southEast && !southWest) {
-            store.insert(store.end(), points.begin(), points.end());
+            store.insert(store.end(), elems.begin(), elems.end());
             return;
         }
         if (northEast)
@@ -268,29 +275,31 @@ struct Node {
     Node *northEast;
     Node *southWest;
     Node *southEast;
-    std::vector<Vector> points;
+    Function f;
+    std::vector<T> elems;
     AABB box;
 };
 
+template<class T, class Function>
 class QuadTree {
 public:
-    QuadTree(std::vector<Vector> points, Vector c, float dim, int threshold) {
-        root = new Node(points, c, dim, threshold);
+    QuadTree(std::vector<T> elems, Vector c, float dim, Function f, int threshold = 3) {
+        root = new Node<T, Function>(elems, c, dim, f, threshold);
     }
 
-    std::vector<Vector> query(const AABB &box) const {
+    std::vector<T> query(const AABB &box) const {
         return root->query(box);
     }
 
-    std::vector<Vector> query(Vector c, float radius) const {
+    std::vector<T> query(Vector c, float radius) const {
         return std::vector<Vector>();
     }
 
-    Node *query(Vector c) {
+    Node<T, Function> *query(Vector c) {
         return root->query(c);
     }
 
-    Node *getRoot() const {
+    Node<T, Function> *getRoot() const {
         return root;
     }
 
@@ -298,13 +307,13 @@ public:
         return root->count();
     }
 
-    std::vector<Vector> get() const {
-        std::vector<Vector> store;
+    std::vector<T> get() const {
+        std::vector<T> store;
         root->get(store);
         return store;
     }
 
-    Node *root;
+    Node<T, Function> *root;
 };
 
 #endif // QUADTREE_H

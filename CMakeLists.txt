@@ -13,5 +13,6 @@ include_directories(${Boost_INCLUDE_DIR} ${QT_INCLUDE_DIR} ${CMAKE_CURRENT_BINAR
 
 QT4_WRAP_UI(UI_SRCS mainwindow.ui)
 
-add_executable(quadtree main.cpp graphicsscene.cpp mainwindow.cpp quadtree.h ${UI_SRCS})
+add_executable(quadtree main.cpp graphicsscene.cpp mainwindow.cpp quadtree.h particle.h ${UI_SRCS})
+#add_executable(quadtree main.cpp quadtree.h ${UI_SRCS})
 target_link_libraries(quadtree ${QT_LIBRARIES})
