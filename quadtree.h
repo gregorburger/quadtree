@@ -10,23 +10,27 @@ struct Vector {
     Vector(float x, float y) : x(x), y(y) {}
     float x, y;
 
+    template<class T>
     inline
-    bool isNW(const Vector &other) const {
+    bool isNW(const T &other) const {
         return other.x <= x && other.y <= y;
     }
 
+    template<class T>
     inline
-    bool isNE(const Vector &other) const {
+    bool isNE(const T &other) const {
         return other.x > x && other.y <= y;
     }
 
+    template<class T>
     inline
-    bool isSW(const Vector &other) const {
+    bool isSW(const T &other) const {
         return other.x <= x && other.y > y;
     }
 
+    template<class T>
     inline
-    bool isSE(const Vector &other) const {
+    bool isSE(const T &other) const {
         return other.x > x && other.y > y;
     }
 
@@ -67,8 +71,9 @@ struct AABB {
         : center(c), half_dim(half_dim) {
     }
 
+    template<class T>
     inline
-    bool in(const Vector &v) const {
+    bool in(const T &v) const {
         if (v.x < l()) return false;
         if (v.x > r()) return false;
         if (v.y < t()) return false;
@@ -149,7 +154,7 @@ struct Node {
         float quad_dim = box.half_dim / 2.0f;
 
 
-        for (const T &v: elems) {
+        for (T &v: elems) {
             if (c.isNE(f(v))) ne.push_back(v);
             if (c.isNW(f(v))) nw.push_back(v);
             if (c.isSE(f(v))) se.push_back(v);

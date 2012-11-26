@@ -11,8 +11,9 @@ public:
 };
 
 struct ParticleToVector {
-    Vector operator()(const Particle &p) const {
-        return Vector(p.x, p.y);
+    inline
+    Particle &operator()(Particle &p) const {
+        return p;
     }
 };
 
