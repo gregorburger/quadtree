@@ -20,7 +20,7 @@
     }
 
 
-QuadTree<Particle *, ParticleToVector, 10> *random(std::vector<Particle *> &points) {
+void insert_random(QuadTree<Particle *, ParticleToVector, 3> * tree, std::vector<Particle *> &points) {
     boost::random::mt19937 rng;
     boost::random::uniform_real_distribution<> gen(0, 1.0);
     srandom(time(NULL));
@@ -29,28 +29,26 @@ QuadTree<Particle *, ParticleToVector, 10> *random(std::vector<Particle *> &poin
         return new Particle(gen(rng), gen(rng));
     });
 
-
-    QuadTree<Particle *, ParticleToVector, 10> *tree = new QuadTree<Particle *, ParticleToVector, 10>(Vector(0.5, 0.5), 1.0, ParticleToVector());
     std::cout << "tree generation of " << points.size();
     TIME_IT(tree->insert(points));
-    return tree;
 }
 
 void change_a_little_bit(std::vector<Particle *> &points) {
     boost::random::mt19937 rng;
     boost::random::uniform_real_distribution<> gen(-0.0001, 0.0001);
-    boost::random::uniform_int_distribution<> gen_idx(0, points.size());
+    boost::random::uniform_int_distribution<> gen_idx(0, points.size()-1);
 
-#pragma omp parallel for private(gen, rng)
+//#pragma omp parallel for private(gen, rng)
     for (size_t i = 0; i < points.size()/10; ++i) {
-        Particle *p = points[gen_idx(rng)];
+        int idx = gen_idx(rng);
+        Particle *p = points[idx];
         p->x += gen(rng);
         p->y += gen(rng);
     }
 }
 
 #ifdef NOGUI
-const int size = 1000000;
+const int size = 10000000;
 #else
 const int size = 1000;
 #endif
@@ -74,7 +72,7 @@ void test_aabb() {
     assert(a.in(a.center));
 }
 
-void bench_query(QuadTree<Particle *, ParticleToVector, 10> *tree, std::vector<Particle *> &points) {
+void bench_query(QuadTree<Particle *, ParticleToVector, 3> *tree, std::vector<Particle *> &points) {
     std::cout << "quering of " << query_size << " nodes";
     std::vector<int> idx(points.size());
     std::generate(idx.begin(), idx.end(), []{static int n = 0; return n++;});
@@ -86,14 +84,15 @@ void bench_query(QuadTree<Particle *, ParticleToVector, 10> *tree, std::vector<P
 }
 
 int main(int argc, char **argv) {
+    auto tree = new QuadTree<Particle *, ParticleToVector, 3>(Vector(0.5, 0.5), 1.0, ParticleToVector());
     //test_aabb();
-    std::vector<Particle *> points(size);
-    QuadTree<Particle *, ParticleToVector, 10> *tree = random(points);
+    std::vector<Particle *> points_1st(size);
+    insert_random(tree, points_1st);
 #ifdef NOGUI
-    std::cout << "tree done" << std::endl;
+    assert(tree->get().size() == points_1st.size());
 
-    TIME_IT(bench_query(tree, points))
-    change_a_little_bit(points);
+    //TIME_IT(bench_query(tree, points_1st)
+    change_a_little_bit(points_1st);
 
     std::vector<Particle *> outs;
     std::cout << "checking";
@@ -102,7 +101,15 @@ int main(int argc, char **argv) {
 
     std::cout << outs.size() << " are out." << std::endl;
 
-    tree->insert(outs);
+    tree->_assert();
+
+    assert(tree->get().size() + outs.size() == points_1st.size());
+
+    std::cout << "reinsert ";
+    TIME_IT(tree->insert(outs))
+
+    tree->_assert();
+    assert(tree->get().size() == points_1st.size());
 
 #else
     QApplication a(argc, argv);

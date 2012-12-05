@@ -150,17 +150,21 @@ struct Node {
           box(c, dim/2.0f), f(f), num_elems(0) {
     }
 
-    void insert(std::vector<T> &elems) {
-        if (elems.size() + num_elems <= threshold) {
-            std::copy(elems.begin(), elems.end(), this->elems.begin() + num_elems);
-            num_elems += elems.size();
+    bool isLeaf() const {
+        return !northEast && !northWest && !southEast && !southWest;
+    }
+
+    void insert(std::vector<T> new_elems) {
+        if (num_elems + new_elems.size() < threshold && isLeaf()) {
+            std::copy(new_elems.begin(), new_elems.end(), this->elems.begin() + num_elems);
+            num_elems += new_elems.size();
             return;
         }
 
-        elems.insert(elems.end(), this->elems.begin(), this->elems.begin() + num_elems);
+        new_elems.insert(new_elems.end(), this->elems.begin(), this->elems.begin() + num_elems);
         num_elems = 0;
 
-        int pre_allocate = elems.size()/2;
+        int pre_allocate = new_elems.size()/2;
 
         std::vector<T> nw, ne, se, sw;
         nw.reserve(pre_allocate);
@@ -169,9 +173,7 @@ struct Node {
         sw.reserve(pre_allocate);
         float quad_dim = box.half_dim / 2.0f;
 
-        std::cout << "inserting " << elems.size() << std::endl;
-
-        for (T &v: elems) {
+        for (T &v: new_elems) {
             auto _v = f(v);
             if (box.center.isNE(_v)) ne.push_back(v);
             if (box.center.isNW(_v)) nw.push_back(v);
@@ -183,30 +185,43 @@ struct Node {
 {
 
 #pragma omp section
+            {
         if (!nw.empty()) {
-            northWest = new Node<T, Function, threshold>(Vector(box.center.x-quad_dim, box.center.y-quad_dim), box.half_dim, f);
+            if (!northWest)
+                northWest = new Node<T, Function, threshold>(Vector(box.center.x-quad_dim, box.center.y-quad_dim), box.half_dim, f);
             northWest->insert(nw);
         }
+            }
 
 #pragma omp section
+            {
         if (!ne.empty()) {
-            northEast = new Node<T, Function, threshold>(Vector(box.center.x+quad_dim, box.center.y-quad_dim), box.half_dim, f);
+            if (!northEast)
+                northEast = new Node<T, Function, threshold>(Vector(box.center.x+quad_dim, box.center.y-quad_dim), box.half_dim, f);
             northEast->insert(ne);
         }
+            }
 
 #pragma omp section
+            {
         if (!sw.empty()) {
-            southWest = new Node<T, Function, threshold>(Vector(box.center.x-quad_dim, box.center.y+quad_dim), box.half_dim, f);
+            if (!southWest)
+                southWest = new Node<T, Function, threshold>(Vector(box.center.x-quad_dim, box.center.y+quad_dim), box.half_dim, f);
             southWest->insert(sw);
         }
+            }
 
 #pragma omp section
+            {
         if (!se.empty()) {
-            southEast = new Node<T, Function, threshold>(Vector(box.center.x+quad_dim, box.center.y+quad_dim), box.half_dim, f);
+            if (!southEast)
+                southEast = new Node<T, Function, threshold>(Vector(box.center.x+quad_dim, box.center.y+quad_dim), box.half_dim, f);
             southEast->insert(se);
         }
+            }
 }
-        assert(elems.size() == (nw.size() + ne.size() + sw.size() + se.size()));
+        assert(new_elems.size() == (nw.size() + ne.size() + sw.size() + se.size()));
+
     }
 
     std::size_t count() const {
@@ -298,7 +313,7 @@ struct Node {
     }
 
     bool check(std::vector<T> &outs) {
-        if (!northEast && !northWest && !southEast && !southWest) {
+        if (isLeaf()) {
             auto end = std::remove_if(elems.begin(), elems.begin()+num_elems, [&](T v){
                 return !box.in(f(v));
             });
@@ -336,7 +351,19 @@ struct Node {
                 //std::cout << "deleting sw" << std::endl;
             }
         }
-        return !northEast && !northWest && !southEast && !southWest;
+        return isLeaf();
+    }
+
+    void _assert() {
+        assert(num_elems < threshold);
+        if (isLeaf()) {
+            assert(num_elems > 0);
+            return;
+        }
+        if (northEast) northEast->_assert();
+        if (northWest) northWest->_assert();
+        if (southEast) southEast->_assert();
+        if (southWest) southWest->_assert();
     }
 
     Node *northWest;
@@ -357,6 +384,7 @@ public:
     }
 
     void insert(std::vector<T> &elems) {
+        assert(root);
         root->insert(elems);
     }
 
@@ -388,6 +416,10 @@ public:
 
     void check(std::vector<T> &outs) {
         root->check(outs);
+    }
+
+    void _assert() const {
+        root->_assert();
     }
 
     Node<T, Function, threshold> *root;
