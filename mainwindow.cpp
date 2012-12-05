@@ -6,7 +6,7 @@
 #include "graphicsscene.h"
 
 
-MainWindow::MainWindow(QuadTree<Particle, ParticleToVector>  *tree, QWidget *parent) :
+MainWindow::MainWindow(QuadTree<Particle *, ParticleToVector>  *tree, QWidget *parent) :
     QMainWindow(parent), ui(new Ui::MainWindow), tree(tree)
 {
     ui->setupUi(this);
@@ -25,7 +25,7 @@ void MainWindow::resizeEvent(QResizeEvent *) {
     ui->graphicsView->fitInView(scene->itemsBoundingRect(), Qt::KeepAspectRatio);
 }
 
-void draw(QGraphicsScene *scene, Node<Particle, ParticleToVector>  *n) {
+void draw(QGraphicsScene *scene, Node<Particle *, ParticleToVector>  *n) {
     if (!n) return;
     float cx = n->box.center.x;
     float cy = n->box.center.y;
@@ -41,8 +41,8 @@ void draw(QGraphicsScene *scene, Node<Particle, ParticleToVector>  *n) {
 void MainWindow::on_actionDraw_activated() {
     scene->clear();
     const float pdim = 0.001;
-    for (Particle v: tree->get()) {
-        scene->addEllipse(v.x - pdim, v.y - pdim, 2*pdim, 2*pdim);
+    for (Particle *v: tree->get()) {
+        scene->addEllipse(v->x - pdim, v->y - pdim, 2*pdim, 2*pdim);
     }
     draw(scene, tree->root);
     ui->graphicsView->fitInView(scene->itemsBoundingRect(), Qt::KeepAspectRatio);

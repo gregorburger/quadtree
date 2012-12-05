@@ -16,7 +16,7 @@ class MainWindow : public QMainWindow {
     Q_OBJECT
     
 public:
-    explicit MainWindow(QuadTree<Particle, ParticleToVector> *tree, QWidget *parent = 0);
+    explicit MainWindow(QuadTree<Particle *, ParticleToVector> *tree, QWidget *parent = 0);
     ~MainWindow();
     
     void resizeEvent(QResizeEvent *);
@@ -27,7 +27,7 @@ private slots:
 private:
     Ui::MainWindow *ui;
     GraphicsScene *scene;
-    QuadTree<Particle, ParticleToVector> *tree;
+    QuadTree<Particle *, ParticleToVector> *tree;
 };
 
 #endif // MAINWINDOW_H

@@ -4,6 +4,8 @@
 #include <vector>
 #include <assert.h>
 #include <array>
+#include <algorithm>
+#include <iostream>
 
 struct Vector {
     Vector() = default;
@@ -141,50 +143,68 @@ struct AABB {
     float half_dim;
 };
 
-template<class T, class Function>
+template<class T, class Function, std::size_t threshold = 3>
 struct Node {
-    Node(std::vector<T> elems, Vector c, float dim, Function f, int threshold = 3)
+    Node(Vector c, float dim, Function f)
         : northWest(0), northEast(0), southWest(0), southEast(0),
-          box(c, dim/2.0f), f(f) {
-        if (elems.size() <= (std::size_t) threshold) {
-            this->elems = elems;
+          box(c, dim/2.0f), f(f), num_elems(0) {
+    }
+
+    void insert(std::vector<T> &elems) {
+        if (elems.size() + num_elems <= threshold) {
+            std::copy(elems.begin(), elems.end(), this->elems.begin() + num_elems);
+            num_elems += elems.size();
             return;
         }
+
+        elems.insert(elems.end(), this->elems.begin(), this->elems.begin() + num_elems);
+        num_elems = 0;
+
+        int pre_allocate = elems.size()/2;
+
         std::vector<T> nw, ne, se, sw;
+        nw.reserve(pre_allocate);
+        ne.reserve(pre_allocate);
+        se.reserve(pre_allocate);
+        sw.reserve(pre_allocate);
         float quad_dim = box.half_dim / 2.0f;
 
+        std::cout << "inserting " << elems.size() << std::endl;
 
         for (T &v: elems) {
-            if (c.isNE(f(v))) ne.push_back(v);
-            if (c.isNW(f(v))) nw.push_back(v);
-            if (c.isSE(f(v))) se.push_back(v);
-            if (c.isSW(f(v))) sw.push_back(v);
+            auto _v = f(v);
+            if (box.center.isNE(_v)) ne.push_back(v);
+            if (box.center.isNW(_v)) nw.push_back(v);
+            if (box.center.isSE(_v)) se.push_back(v);
+            if (box.center.isSW(_v)) sw.push_back(v);
         }
 
 #pragma omp parallel sections
 {
 
 #pragma omp section
-{
-        if (!nw.empty())
-            northWest = new Node<T, Function>(nw, Vector(c.x-quad_dim, c.y-quad_dim), box.half_dim, f, threshold);
-}
-#pragma omp section
-{
-        if (!ne.empty())
-            northEast = new Node<T, Function>(ne, Vector(c.x+quad_dim, c.y-quad_dim), box.half_dim, f, threshold);
-}
-#pragma omp section
-{
-        if (!sw.empty())
-            southWest = new Node<T, Function>(sw, Vector(c.x-quad_dim, c.y+quad_dim), box.half_dim, f, threshold);
-}
-#pragma omp section
-{
-        if (!se.empty())
-            southEast = new Node<T, Function>(se, Vector(c.x+quad_dim, c.y+quad_dim), box.half_dim, f, threshold);
-}
+        if (!nw.empty()) {
+            northWest = new Node<T, Function, threshold>(Vector(box.center.x-quad_dim, box.center.y-quad_dim), box.half_dim, f);
+            northWest->insert(nw);
+        }
 
+#pragma omp section
+        if (!ne.empty()) {
+            northEast = new Node<T, Function, threshold>(Vector(box.center.x+quad_dim, box.center.y-quad_dim), box.half_dim, f);
+            northEast->insert(ne);
+        }
+
+#pragma omp section
+        if (!sw.empty()) {
+            southWest = new Node<T, Function, threshold>(Vector(box.center.x-quad_dim, box.center.y+quad_dim), box.half_dim, f);
+            southWest->insert(sw);
+        }
+
+#pragma omp section
+        if (!se.empty()) {
+            southEast = new Node<T, Function, threshold>(Vector(box.center.x+quad_dim, box.center.y+quad_dim), box.half_dim, f);
+            southEast->insert(se);
+        }
 }
         assert(elems.size() == (nw.size() + ne.size() + sw.size() + se.size()));
     }
@@ -212,7 +232,8 @@ struct Node {
     std::vector<T> query(const AABB &box) const {
         std::vector<T> points;
         if (!northEast && !northWest && !southEast && !southWest) {
-            for (T v: this->elems) {
+            for (size_t i = 0; i < num_elems; ++i) {
+                T v = elems[i];
                 if (box.in(f(v))) {
                     points.push_back(v);
                 }
@@ -263,7 +284,7 @@ struct Node {
 
     void get(std::vector<T> &store) const {
         if (!northEast && !northWest && !southEast && !southWest) {
-            store.insert(store.end(), elems.begin(), elems.end());
+            store.insert(store.end(), elems.begin(), elems.begin()+num_elems);
             return;
         }
         if (northEast)
@@ -276,20 +297,67 @@ struct Node {
             southWest->get(store);
     }
 
+    bool check(std::vector<T> &outs) {
+        if (!northEast && !northWest && !southEast && !southWest) {
+            auto end = std::remove_if(elems.begin(), elems.begin()+num_elems, [&](T v){
+                return !box.in(f(v));
+            });
+
+            outs.insert(outs.end(), end, elems.begin()+num_elems);
+            num_elems = end - elems.begin();
+
+            return num_elems == 0;
+        }
+        if (northEast) {
+            if (northEast->check(outs)) {
+                delete northEast;
+                northEast = 0;
+                //std::cout << "deleting ne" << std::endl;
+            }
+        }
+        if (northWest) {
+            if (northWest->check(outs)) {
+                delete northWest;
+                northWest = 0;
+                //std::cout << "deleting nw" << std::endl;
+            }
+        }
+        if (southEast) {
+            if (southEast->check(outs)) {
+                delete southEast;
+                southEast = 0;
+                //std::cout << "deleting se" << std::endl;
+            }
+        }
+        if (southWest) {
+            if (southWest->check(outs)) {
+                delete southWest;
+                southWest = 0;
+                //std::cout << "deleting sw" << std::endl;
+            }
+        }
+        return !northEast && !northWest && !southEast && !southWest;
+    }
+
     Node *northWest;
     Node *northEast;
     Node *southWest;
     Node *southEast;
-    Function f;
-    std::vector<T> elems;
     AABB box;
+    Function f;
+    std::array<T, threshold> elems;
+    size_t num_elems;
 };
 
-template<class T, class Function>
+template<class T, class Function, std::size_t threshold = 3>
 class QuadTree {
 public:
-    QuadTree(std::vector<T> elems, Vector c, float dim, Function f, int threshold = 3) {
-        root = new Node<T, Function>(elems, c, dim, f, threshold);
+    QuadTree(Vector c, float dim, Function f) {
+        root = new Node<T, Function, threshold>(c, dim, f);
+    }
+
+    void insert(std::vector<T> &elems) {
+        root->insert(elems);
     }
 
     std::vector<T> query(const AABB &box) const {
@@ -300,11 +368,11 @@ public:
         return std::vector<Vector>();
     }
 
-    Node<T, Function> *query(Vector c) {
+    Node<T, Function, threshold> *query(Vector c) {
         return root->query(c);
     }
 
-    Node<T, Function> *getRoot() const {
+    Node<T, Function, threshold> *getRoot() const {
         return root;
     }
 
@@ -318,7 +386,11 @@ public:
         return store;
     }
 
-    Node<T, Function> *root;
+    void check(std::vector<T> &outs) {
+        root->check(outs);
+    }
+
+    Node<T, Function, threshold> *root;
 };
 
 #endif // QUADTREE_H

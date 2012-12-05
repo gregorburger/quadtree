@@ -12,8 +12,8 @@ public:
 
 struct ParticleToVector {
     inline
-    Particle &operator()(Particle &p) const {
-        return p;
+    Particle &operator()(Particle *p) const {
+        return *p;
     }
 };
 
